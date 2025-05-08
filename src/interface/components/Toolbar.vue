@@ -42,7 +42,10 @@
                     @click="tool.action?.(editor)"
                     :active="tool.active?.(editor)"
                     :aria-pressed="tool.active?.(editor)"
-                    :disabled="tool.disabled?.(editor) || (singleLineMode && tool.disabledInSingleLineMode)"
+                    :disabled="
+                        tool.disabled?.(editor) ||
+                        (singleLineMode && tool.disabledInSingleLineMode)
+                    "
                 >
                     <v-list-item-icon v-if="tool.icon">
                         <v-icon :name="tool.icon" />
@@ -50,7 +53,9 @@
                     <v-list-item-content>
                         <v-text-overflow :text="tool.name" />
                     </v-list-item-content>
-                    <v-list-item-hint>{{ translateShortcut(tool.shortcut as string[]) }}</v-list-item-hint>
+                    <v-list-item-hint>{{
+                        translateShortcut(tool.shortcut as string[])
+                    }}</v-list-item-hint>
                 </v-list-item>
             </v-list>
         </v-menu>
@@ -65,24 +70,31 @@
             :shortcut="tool.shortcut"
             :action="(attrs = null) => tool.action?.(editor, attrs)"
             :active="editor.isFocused && tool.active?.(editor)"
-            :disabled="tool.disabled?.(editor) || (singleLineMode && tool.disabledInSingleLineMode)"
+            :disabled="
+                tool.disabled?.(editor) ||
+                (singleLineMode && tool.disabledInSingleLineMode)
+            "
             :editor="editor"
         />
     </component>
 </template>
 
-
-
 <script setup lang="ts">
-    import { ref, computed } from 'vue';
-    import { FloatingMenu, type Editor } from '@tiptap/vue-3';
-    import ToolButton from './ToolButton.vue';
-    import { translateShortcut } from '../directus-core/utils/translate-shortcut';
+    import { ref, computed } from "vue";
+    import { FloatingMenu, type Editor } from "@tiptap/vue-3";
+    import ToolButton from "./ToolButton.vue";
+    import { translateShortcut } from "../directus-core/utils/translate-shortcut";
     import { useI18n } from "vue-i18n";
-    import { useI18nFallback } from '../composables/use-i18n-fallback'
-    import type { FloatingMenuPluginProps } from '@tiptap/extension-floating-menu';
-    import type { Tool, ToolbarMode } from '../types';
+    import { useI18nFallback } from "../composables/use-i18n-fallback";
+    import type { FloatingMenuPluginProps } from "@tiptap/extension-floating-menu";
+    import type { Tool, ToolbarMode } from "../types";
 
+    interface CustomFormat {
+        name: string;
+        tag: string;
+        classes: string[];
+        styles: Record<string, string>;
+    }
 
     // Props
     interface Props {
@@ -90,67 +102,155 @@
         editor: Editor;
         displayFormat: boolean;
         singleLineMode: boolean;
-        mode: ToolbarMode
+        mode: ToolbarMode;
+        customFormats: CustomFormat[];
     }
     const props = withDefaults(defineProps<Props>(), {
-        displayFormat: false
+        displayFormat: false,
+        customFormats: () => [],
     });
-
 
     // I18n
     const { t, $t } = useI18nFallback(useI18n());
 
-
-    // Split up tools to types
-    const buttonTools = ref<Tool[]>([]);
-    const formatTools = ref<Tool[]>([]);
-    props.tools.forEach((tool) => {
-        if (tool.excludeFromToolbar) {
-            return;
-        }
-
-        tool.name = $t(tool.name);
-
-        if (tool.groups && tool.groups.indexOf('format') >= 0) {
-            formatTools.value.push(tool);
-            return;
-        }
-
-        buttonTools.value.push(tool);
+    // Replace refs and manual pushes with computed properties
+    const buttonTools = computed(() => {
+        return props.tools
+            .filter(
+                (tool) =>
+                    !tool.excludeFromToolbar &&
+                    (!tool.groups || tool.groups.indexOf("format") < 0)
+            )
+            .map((tool) => ({
+                ...tool,
+                name: $t(tool.name),
+            }));
     });
-    const formatToolsDisabled = computed(() => formatTools.value.every((tool) => tool.disabled?.(props.editor)));
+
+    const builtInFormatTools = computed(() => {
+        return props.tools
+            .filter(
+                (tool) =>
+                    !tool.excludeFromToolbar &&
+                    tool.groups &&
+                    tool.groups.indexOf("format") >= 0
+            )
+            .map((tool) => {
+                let newActive = tool.active;
+                if (tool.key === "paragraph") {
+                    newActive = ((editor: Editor) => {
+                        const attrs = editor.getAttributes("paragraph");
+                        return (
+                            editor.isActive("paragraph") &&
+                            !attrs.class &&
+                            !attrs.style
+                        );
+                    }) as any;
+                } else if (
+                    typeof tool.key === "string" &&
+                    tool.key.startsWith("heading")
+                ) {
+                    const match = tool.key.match(/heading\s*(\d)/);
+                    const level = match ? parseInt(match[1], 10) : undefined;
+                    newActive = ((editor: Editor) => {
+                        const attrs = editor.getAttributes("heading");
+                        return typeof level === "number"
+                            ? editor.isActive("heading", { level }) &&
+                                  !attrs.class &&
+                                  !attrs.style
+                            : false;
+                    }) as any;
+                }
+                return {
+                    ...tool,
+                    name: $t(tool.name),
+                    active: newActive,
+                };
+            });
+    });
+
+    const customFormatTools = computed(() => {
+        const tools = props.customFormats.map((format) => ({
+            key: `custom-format-${format.name}`,
+            name: format.name,
+            groups: ["format"],
+            //   icon: "format_paragraph",
+            shortcut: [],
+            extension: [],
+            action: (editor: Editor, attrs?: any) => {
+                editor.chain().focus().setCustomFormat(format).run();
+            },
+            active: (editor: Editor) => {
+                const attrs = editor.getAttributes("paragraph");
+                const classString = format.classes?.join(" ") || "";
+                const styleString = format.styles
+                    ? Object.entries(format.styles)
+                          .map(([k, v]) => `${k}:${v}`)
+                          .join(";")
+                    : "";
+                return (
+                    editor.isActive("paragraph") &&
+                    attrs.class === classString &&
+                    attrs.style === styleString
+                );
+            },
+            disabled: () => false,
+            display: undefined,
+        })) as unknown as Tool[];
+        return tools;
+    });
+
+    const formatTools = computed(() => [
+        ...builtInFormatTools.value,
+        ...customFormatTools.value,
+    ]);
+
+    const formatToolsDisabled = computed(() =>
+        formatTools.value.every((tool) => tool.disabled?.(props.editor))
+    );
     const formatToolsDisplay = computed(() => {
-        const activeFormat: Tool[] = formatTools.value.filter((tool: Tool) => tool.active?.(props.editor));
+        const activeFormat: Tool[] = formatTools.value.filter((tool: Tool) =>
+            tool.active?.(props.editor)
+        );
 
         if (activeFormat.length)
-            return activeFormat.map(tool => tool.name)[0];
+            return activeFormat.map((tool) => tool.name)[0];
 
-        return t('tools.paragraph');
+        return t("tools.paragraph");
     });
 
     const { floatingMenuProps } = useFloatingMenu();
 
     function useFloatingMenu() {
-        const padding = parseInt(getComputedStyle(document.body)?.getPropertyValue('--theme--popover--menu--border-radius')?.replace('px', ''), 10) ?? 6;
+        const padding =
+            parseInt(
+                getComputedStyle(document.body)
+                    ?.getPropertyValue("--theme--popover--menu--border-radius")
+                    ?.replace("px", ""),
+                10
+            ) ?? 6;
 
         type FloatingMenuProps = {
-            editor: FloatingMenuPluginProps['editor'];
-            shouldShow: FloatingMenuPluginProps['shouldShow'];
-            tippyOptions: FloatingMenuPluginProps['tippyOptions'];
+            editor: FloatingMenuPluginProps["editor"];
+            shouldShow: FloatingMenuPluginProps["shouldShow"];
+            tippyOptions: FloatingMenuPluginProps["tippyOptions"];
         };
 
         const floatingMenuProps: FloatingMenuProps = {
             editor: props.editor,
             shouldShow: ({ editor }) => editor.isFocused,
             tippyOptions: {
-                placement: 'top',
-                maxWidth: 'none',
+                placement: "top",
+                maxWidth: "none",
                 zIndex: 500,
                 arrow: true,
                 popperOptions: {
                     modifiers: [
-                        { name: 'arrow', options: { padding } },
-                        { name: 'preventOverflow', options: { boundary: props.editor.view.dom } },
+                        { name: "arrow", options: { padding } },
+                        {
+                            name: "preventOverflow",
+                            options: { boundary: props.editor.view.dom },
+                        },
                     ],
                 },
             },
@@ -160,18 +260,31 @@
     }
 </script>
 
-
-
 <style scoped>
     .toolbar {
         --v-button-background-color: transparent;
         --v-button-color: var(--theme--foreground, var(--foreground-normal));
-        --v-button-background-color-hover: var(--theme--border-color, var(--border-normal));
-        --v-button-color-hover: var(--theme--foreground, var(--foreground-normal));
-        --v-button-background-color-active: var(--theme--border-color, var(--border-normal));
-        --v-button-color-active: var(--theme--foreground, var(--foreground-normal));
+        --v-button-background-color-hover: var(
+            --theme--border-color,
+            var(--border-normal)
+        );
+        --v-button-color-hover: var(
+            --theme--foreground,
+            var(--foreground-normal)
+        );
+        --v-button-background-color-active: var(
+            --theme--border-color,
+            var(--border-normal)
+        );
+        --v-button-color-active: var(
+            --theme--foreground,
+            var(--foreground-normal)
+        );
         --v-button-background-color-disabled: transparent;
-        --v-button-color-disabled: var(--theme--foreground-subdued, var(--foreground-subdued));
+        --v-button-color-disabled: var(
+            --theme--foreground-subdued,
+            var(--foreground-subdued)
+        );
 
         --toolbar-item-m: 1px;
         --toolbar-dropdown-p: 2px;
@@ -184,12 +297,18 @@
 
     .toolbar-dropdown-button :deep(.button) {
         --v-button-min-width: 0;
-        padding-left: calc(var(--theme--form--field--input--padding, var(--input-padding)) - var(--toolbar-dropdown-p) * 2);
+        padding-left: calc(
+            var(--theme--form--field--input--padding, var(--input-padding)) -
+                var(--toolbar-dropdown-p) * 2
+        );
         padding-right: 4px;
     }
 
     .toolbar-dropdown {
-        --v-list-item-background-color-active: var(--theme--border-color, var(--border-normal));
+        --v-list-item-background-color-active: var(
+            --theme--border-color,
+            var(--border-normal)
+        );
     }
 
     .toolbar :deep(> *:not(.v-dialog)) {
@@ -199,7 +318,9 @@
 
     .toolbar.sticky {
         position: sticky;
-        top: calc(var(--header-bar-height) - 1px + var(--theme--header--border-width));
+        top: calc(
+            var(--header-bar-height) - 1px + var(--theme--header--border-width)
+        );
         z-index: 1;
     }
 
@@ -212,10 +333,7 @@
     }
 </style>
 
-
-
 <style>
-
     .flexible-editor-wrapper .tippy-arrow,
     .flexible-editor-wrapper .tippy-arrow::after {
         position: absolute;
@@ -238,38 +356,38 @@
         background: var(--theme--popover--menu--background);
         transform: rotate(45deg) scale(1);
         transition-delay: 0;
-        content: '';
+        content: "";
     }
 
-    .flexible-editor-wrapper [data-placement^='top'] .tippy-arrow {
+    .flexible-editor-wrapper [data-placement^="top"] .tippy-arrow {
         bottom: -6px;
     }
 
-    .flexible-editor-wrapper [data-placement^='top'] .tippy-arrow::after {
+    .flexible-editor-wrapper [data-placement^="top"] .tippy-arrow::after {
         bottom: 3px;
     }
 
-    .flexible-editor-wrapper [data-placement^='bottom'] .tippy-arrow {
+    .flexible-editor-wrapper [data-placement^="bottom"] .tippy-arrow {
         top: -6px;
     }
 
-    .flexible-editor-wrapper [data-placement^='bottom'] .tippy-arrow::after {
+    .flexible-editor-wrapper [data-placement^="bottom"] .tippy-arrow::after {
         top: 3px;
     }
 
-    .flexible-editor-wrapper [data-placement^='right'] .tippy-arrow {
+    .flexible-editor-wrapper [data-placement^="right"] .tippy-arrow {
         left: -6px;
     }
 
-    .flexible-editor-wrapper [data-placement^='right'] .tippy-arrow::after {
+    .flexible-editor-wrapper [data-placement^="right"] .tippy-arrow::after {
         left: 4px;
     }
 
-    .flexible-editor-wrapper [data-placement^='left'] .tippy-arrow {
+    .flexible-editor-wrapper [data-placement^="left"] .tippy-arrow {
         right: -6px;
     }
 
-    .flexible-editor-wrapper [data-placement^='left'] .tippy-arrow::after {
+    .flexible-editor-wrapper [data-placement^="left"] .tippy-arrow::after {
         right: 4px;
     }
 </style>

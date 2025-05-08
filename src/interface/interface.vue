@@ -1,13 +1,10 @@
 <template>
-    <div
-        v-if="errors.length"
-        class="errors"
-    >
-        <v-notice
-            v-for="errorMsg in errors"
-            type="warning"
-        >
+    <div v-if="errors.length || formatError" class="errors">
+        <v-notice v-for="errorMsg in errors" type="warning">
             <span>{{ t(errorMsg) }}</span>
+        </v-notice>
+        <v-notice v-if="formatError" type="warning">
+            <span>{{ formatError }}</span>
         </v-notice>
     </div>
     <div
@@ -22,6 +19,7 @@
             :display-format="displayFormat"
             :single-line-mode="singleLineMode"
             :mode="toolbarMode"
+            :custom-formats="customFormatsComputed"
         />
         <editor-content
             :editor="editor"
@@ -63,6 +61,9 @@
     import { useI18nFallback } from "./composables/use-i18n-fallback";
     import type { Collection } from "./directus-core/types/collections";
     import type { ToolbarMode, RelationReferenceAttributes } from "./types";
+    import { useCustomFormats } from "./composables/use-custom-formats";
+    import customFormat from "./tools/custom-format";
+    import { CustomHeading, CustomParagraph } from "./tools/custom-extensions";
 
     // Props
     interface Props {
@@ -86,6 +87,7 @@
         field: string | null;
         collection: string | null;
         primaryKey: string | number | null;
+        formatUrl: string;
     }
     const props = withDefaults(defineProps<Props>(), {
         value: null,
@@ -102,6 +104,7 @@
         field: null,
         collection: null,
         primaryKey: null,
+        formatUrl: "",
     });
 
     // I18n
@@ -113,6 +116,25 @@
     // Input Mode
     const singleLineMode = computed(() => props.inputMode == "single");
 
+    // Update the custom formats setup
+    const {
+        customFormats,
+        error: formatError,
+        fetchCustomFormats,
+    } = useCustomFormats();
+    const customFormatsComputed = computed(() => customFormats.value);
+
+    // Watch for changes to the formatUrl prop
+    watch(
+        () => props.formatUrl,
+        async (url) => {
+            if (url) {
+                await fetchCustomFormats(url);
+            }
+        },
+        { immediate: true }
+    );
+
     // TipTap Editor Setup
     const editor = useEditor({
         content: props.value,
@@ -121,14 +143,16 @@
                 singleLineMode.value ? { content: "(text|singleline)*" } : {}
             ),
             Text,
-            Paragraph,
+            CustomParagraph,
+            CustomHeading,
             Placeholder.configure({ placeholder: props.placeholder }),
             Dropcursor,
             Gapcursor,
             RelationBlock,
             RelationInlineBlock,
             RelationMark,
-            ...toolsExtensions(props.tools),
+            ...(customFormat.extension as any[]),
+            ...(toolsExtensions(props.tools) as any[]),
         ],
         onCreate() {
             // called twice to reset the items even if props.value (below) is empty

@@ -12,13 +12,13 @@ import { interfaceOptions, interfaceOptionsDefault } from "./tools";
 import customMessages from "./i18n/custom-messages";
 
 export default defineInterface({
-    id: "flexible-editor-interface",
-    name: "Flexible Editor",
+    id: "flexible-editor-ay-interface",
+    name: "Flexible Editor AY",
     icon: "description",
     description: customMessages.extension_description,
     component,
     types: ["json"],
-    // NOTE: We can’t use `localTypes: ["m2a"]`, because the generated junction collection won’t have an `id` of `uuid`, and we don’t want the relation-nodes to be required
+    // NOTE: We can't use `localTypes: ["m2a"]`, because the generated junction collection won't have an `id` of `uuid`, and we don't want the relation-nodes to be required
     // localTypes: ["m2a"],
     group: "standard",
     recommendedDisplays: ["flexible-editor-display"],
@@ -186,6 +186,22 @@ export default defineInterface({
                 },
                 schema: {
                     default_value: false,
+                },
+            },
+            {
+                field: "formatUrl",
+                name: "Custom Formats URL",
+                type: "string",
+                meta: {
+                    width: "full",
+                    interface: "input",
+                    options: {
+                        placeholder:
+                            "Enter URL to JSON file containing custom formats",
+                    },
+                },
+                schema: {
+                    default_value: "",
                 },
             },
         ];

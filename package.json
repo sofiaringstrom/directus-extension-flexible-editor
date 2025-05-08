@@ -1,7 +1,7 @@
 {
-    "name": "directus-extension-flexible-editor",
+    "name": "directus-extension-flexible-editor-ay",
     "version": "1.8.3",
-    "description": "A rich text editor (WYSIWYG) with JSON output that allows the integration of M2A relations to make it extremely flexible.",
+    "description": "An enhanced version of the flexible editor with additional paragraph formatting options and other improvements.",
     "license": "GPL-3.0",
     "author": {
         "email": "dev@formfcw.com",
