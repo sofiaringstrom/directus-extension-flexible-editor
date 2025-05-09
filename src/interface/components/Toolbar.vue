@@ -182,16 +182,25 @@
             },
             active: (editor: Editor) => {
                 const attrs = editor.getAttributes("paragraph");
-                const classString = format.classes?.join(" ") || "";
+                const classString = format.classes?.join(" ") ?? "";
                 const styleString = format.styles
                     ? Object.entries(format.styles)
                           .map(([k, v]) => `${k}:${v}`)
                           .join(";")
                     : "";
+
+                // Check if the node is active and has the correct attributes
+                const hasCorrectClasses =
+                    !classString ||
+                    (attrs.class as string | undefined) === classString;
+                const hasCorrectStyles =
+                    !styleString ||
+                    (attrs.style as string | undefined) === styleString;
+
                 return (
                     editor.isActive("paragraph") &&
-                    attrs.class === classString &&
-                    attrs.style === styleString
+                    hasCorrectClasses &&
+                    hasCorrectStyles
                 );
             },
             disabled: () => false,
